@@ -1,6 +1,8 @@
 # Target: Get data from 3rd graph in https://www.flightera.net/en/flight_stats
-flights <- setNames(data.frame(matrix(ncol = 6, nrow = 0)),
-                    c("code", "iso", "num", "location", "date", "flightCount"))
+flights <- setNames(
+	data.frame(matrix(ncol = 6, nrow = 0)),
+	c("code", "iso", "num", "location", "date", "flightCount")
+)
 
 # Looking into the sites source, I realized flightera keeps all their data for
 # the graphs in the same URL by querying the country code. For example:
@@ -13,14 +15,17 @@ flights <- setNames(data.frame(matrix(ncol = 6, nrow = 0)),
 # when flightera doesn't contain data for a country.
 
 # get country codes from https://www.iban.com/country-codes
-pacman::p_load(tidyverse, rvest, robotstxt, xml2)
+pacman::p_load(tidyverse, rvest, robotstxt, xml2, magrittr)
 paths_allowed("https://www.iban.com/country-codes")
 page <- read_html("https://www.iban.com/country-codes")
 page %>% xml2::xml_structure()
-countryNames <- page %>% html_nodes("td:nth-child(1)") %>% html_text()
-countryCodes <- page %>% html_nodes("td:nth-child(2)") %>% html_text()
-countryISOs <- page %>% html_nodes("td:nth-child(3)") %>% html_text()
-countryNums <- page %>% html_nodes("td:nth-child(4)") %>% html_text()
+extractor <- \(col_num) {
+	page %>% html_nodes(paste0("td:nth-child(", col_num, ")")) %>% html_text()
+}
+countryNames <- extractor(1)
+countryCodes <- extractor(2)
+countryISOs <- extractor(3)
+countryNums <- extractor(4)
 
 
 # get flight data for each country we can
@@ -28,19 +33,28 @@ paths_allowed("https://www.flightera.net/en/flight_stats")
 
 
 for (i in 1:length(countryCodes)) {
-	print(sprintf("current index: %d, country: %s", i, countryNames[i]))
+	print(paste("current index:", i, "country:", countryNames[i]))
 	tryCatch( # inside a try catch block to handle countries w/ no data
 		expr = {
 			data <- readLines(paste0(
 				"https://www.flightera.net/en/flight_stats?q=",
-				countryCodes[i], sep=""))
+				countryCodes[i], sep=""
+			))
 			# remove everything before 2020 & split into respective years to
 			# extract numbers
-			data <- gsub('.*label":"2020","data":\\[', "", data)
-			data2020 <- str_extract(gsub('label":"2021.*', "", data), "[^]]*")
+			data %<>% gsub('.*label":"2020","data":\\[', "", .)
+			data2020 <-
+				str_extract(
+					gsub('label":"2021.*', "", data),
+					"[^]]*"
+				) %>%
+				{ strsplit(., ",")[[1]] }
+			# i was here
 			data2021 <- str_extract(
-				gsub('.*label":"2021","data":\\[', "", data), "[^]]*")
-			data2020 <- strsplit(data2020, ",")[[1]]
+				gsub('.*label":"2021","data":\\[', "", data),
+				"[^]]*"
+			)
+			#data2020 <- strsplit(data2020, ",")[[1]]
 			data2021 <- strsplit(data2021, ",")[[1]]
 			flightCount <- c(data2020, data2021)
 			# get dates for date column
@@ -59,8 +73,7 @@ for (i in 1:length(countryCodes)) {
 				code, iso, num, location, date, flightCount))
 		},
 		error = function(e) {
-			#print(e)
-			message(sprintf("data for %s doesn't exist", countryNames[i]))
+			message(paste('data for', countryNames[i], "doesn't exist"))
 		}
 	)
 }
