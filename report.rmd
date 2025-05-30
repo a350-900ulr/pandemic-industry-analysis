@@ -314,33 +314,38 @@ global_stats <- covid %>%
 pacman::p_load(scales)
 
 # generic function to graph a line graph comparing 2 different y axes
-graph2axes <- \(input, x, y1, y1name=y1, y2, y2name=y2, title=paste(y1name,'vs.',y2name)) {
-
-	ggplot(input, aes(x=.data[[x]])) +
-		geom_line(aes(y=.data[[y1]]), color='red') +
-		geom_line(aes(y=rescale(
-			.data[[y2]],
-			.data[[y1]] %>% { c(min(.), max(.)) }
-		)), color = 'blue') +
-		scale_y_continuous(
-			name=y1name,
-			sec.axis=sec_axis(~rescale(
-				., # can also be .x
-				input[[y2]] %>% { c(min(.), max(.)) }
-			), name=y2name)) +
-		theme(
-			axis.title.y=element_text(color='red'),
-			axis.title.y.right=element_text(color='blue')) +
-		labs(title=title, x=x)
+graph2axes <- \(
+	input, x,
+	y1, y1name=y1, y1color='red',
+	y2, y2name=y2, y2color='blue',
+	title=paste(y1name,'vs.',y2name)
+) {
+	print(
+		ggplot(input, aes(x=.data[[x]])) +
+			geom_line(aes(y=.data[[y1]]), color=y1color) +
+			geom_line(aes(y=rescale(
+				.data[[y2]],
+				.data[[y1]] %>% { c(min(.), max(.)) }
+			)), color=y2color) +
+			scale_y_continuous(
+				name=y1name,
+				sec.axis=sec_axis(~rescale(
+					., # can also be .x
+					input[[y2]] %>% { c(min(.), max(.)) }
+				), name=y2name)) +
+			theme(
+				axis.title.y=element_text(color=y1color),
+				axis.title.y.right=element_text(color=y2color)) +
+			labs(title=title, x=x)
+	)
 }
 
 graph2axes(
-	global_stats,
-	'date',
-	'new_cases_smoothed_per_million',
-	'new cases per million',
-	'flights',
-	title='Global new cases per million vs. flights per day'
+	input=global_stats,
+	x='date',
+	y1='new_cases_smoothed_per_million',
+	y1name='new cases per million',
+	y2='flights',
 )
 ```
 
@@ -384,16 +389,16 @@ for (country in focus) {
 		na.omit()
 
 	graph2axes(
-		inner_join(flightsTemp, casesTemp, by='date'),
-		'date',
-		'new_cases_smoothed',
-		'new cases',
-		'flight_count',
-		'flights',
-		paste('New cases vs. flights in', country)
-	) %>% print()
+		input=inner_join(flightsTemp, casesTemp, by='date'),
+		x='date',
+		y1='new_cases_smoothed',
+		y1name='new cases',
+		y2='flight_count',
+		y2name='flights',
+		title=paste('new cases vs. flights in', country)
+	)
 
-}; rm(flightsTemp, casesTemp)
+}; rm(country, flightsTemp, casesTemp)
 ```
 
 It is still a bit difficult to read, however, we can see that the initial outbreak caused a massive dip in every country, with each successive peak hindering recovery. Is there a way to compare how much a country's airline industry was affected compared to another? Taking the pre-corona levels & the lowest point in that country's air traffic, then comparing it to the amount of total cases a country had by the end of the previously mentioned initial air traffic drop: July 2020. The formula would be
@@ -404,228 +409,191 @@ Although the number by itself doesn't really mean anything, it can be used to co
 
 ```{r impactdates, message=F}
 
-flights_extremes <- flights %>%
-	group_by(location) %>%
-	slice_min(flight_count, n = 1, with_ties = FALSE) %>%
-	bind_rows(
-		flights %>%
-			group_by(location) %>%
-			slice_max(flight_count, n = 1, with_ties = FALSE)
-	) %>%
-	mutate(extreme_type = if_else(flight_count == min(flight_count), 'min", "max")) %>%
+# extract the dates of when a country had the most & the least flights
+flights_impact <- flights %>%
+	group_by(location) %>% {
+		bind_rows(
+			slice_min(., flight_count, n=1, with_ties=F),
+			slice_max(., flight_count, n=1, with_ties=F)
+		)
+	} %>%
+	mutate(type=if_else(flight_count == min(flight_count), 'min', 'max'))
 
-
-every_country <- flights$location %>% unique()
-
-
-
-flightImpact <- setNames(tibble(matrix(ncol = 5, nrow = 0)),
-	c("num", "location", "flights", "date", "extremity"))
-
-
-
-for (country in everyCountry) {
-	tempFlights <- flights %>% filter(location == country) %>%
-		select(num, location, date, flightCount)
-	max <- tempFlights[tempFlights$flightCount == max(tempFlights$flightCount),]
-	min <- tempFlights[tempFlights$flightCount == min(tempFlights$flightCount),]
-
-	flightImpact <- rbind(flightImpact, data.frame(
-		num = tempFlights$num[1],
-		location = country,
-		flights = min$flightCount[1],
-		date = min$date[1],
-		extremity = "min"
-	))
-	flightImpact <- rbind(flightImpact, data.frame(
-		num = tempFlights$num[1],
-		location = country,
-		flights = max$flightCount[1],
-		date = max$date[1],
-		extremity = "max"
-	))
-}
-
-
-
-
-flightImpact %>%
-	ggplot(aes(x = date, fill = extremity)) +
-	geom_histogram(binwidth = 4, alpha = 0.5, position = "identity") +
-	scale_fill_manual(values=c("Red", "Blue"))
+flights_impact %>%
+	ggplot(aes(x=date, fill=type)) +
+	geom_histogram(binwidth=4, alpha=.5, position='identity') +
+	scale_fill_manual(values=c('Red', 'Blue'))
 ```
 
-We seem to have quite a few outliers much later than expected, but this is because some countries such as Russia have had their airline industries recover already. However the rest of the dates bunch up all around the start, so our data is good here. To make sure we use the correct mins & maxes caused by the 1st wave of corona, let's use everything before July 2020 to calculate our impact levels & map it.
+There seems to be quite a few outliers much later than expected, but this is because some countries such as Russia have had their airline industries recover already. However, the rest of the dates bunch up all around the start, so our data is good here. To make sure the correct mins & maxes caused by the 1st wave of corona are used, let's filter everything before July 2020 to calculate impact levels & map it.
 
-```{r flightimpactmap, message=FALSE, warning=FALSE}
-flightImpact <- setNames(data.frame(matrix(ncol = 8, nrow = 0)),
-	c("num", "iso", "location", "minFlights", "minDate", "maxFlights",
-	  "maxDate", "impact"))
-for (country in everyCountry) {
-	tempFlights <- flights %>%
-		filter(location == country & date < as.Date("2020-07-01")) %>%
-		select(num, iso, location, date, flightCount)
-	max <- tempFlights[tempFlights$flightCount == max(tempFlights$flightCount),]
-	min <- tempFlights[tempFlights$flightCount == min(tempFlights$flightCount),]
+```{r flightimpactmap, message=F}
 
-	flightImpact <- rbind(flightImpact, data.frame(
-		num = tempFlights$num[1],
-		iso = tempFlights$iso[1],
-		location = country,
-		minFlights = min$flightCount[1],
-		minDate = min$date[1],
-		maxFlights = max$flightCount[1],
-		maxDate = max$date[1],
-		impact = 100 - (100 * min$flightCount[1] / max$flightCount[1])
-	))
-}
+# same as before, except filter by date & calculate impact
+flights_impact <- flights %>%
+	filter(date < as.Date('2020-07-01')) %>%
+	group_by(location) %>% {
+	bind_rows(
+		slice_min(., flight_count, n=1, with_ties=F),
+		slice_max(., flight_count, n=1, with_ties=F)
+	)
+} %>%
+	mutate(type=if_else(flight_count == min(flight_count), 'min', 'max')) %>%
+	mutate(impact = 100 - (100 * min(flight_count) / max(flight_count)))
 
-map_data("world") %>%
-	rename(location = region) %>%
-	left_join(flightImpact, by = "location") %>%
-	ggplot(mapping = aes(x = long, y = lat, group = group, fill = impact)) +
-	geom_polygon(color = "black") +
-	coord_map(xlim = c(-180, 180), ylim=c(-60, 90)) +
-	scale_fill_distiller(palette = "Reds", trans = "reverse") +
-	labs(x = element_blank(), y = element_blank()) +
-	guides(fill = guide_legend(title = "% drop in air traffic from corona"))
+# flight_impact <- setNames(data.frame(matrix(ncol = 8, nrow = 0)),
+# 	c("num", "iso", "location", "minFlights", "minDate", "maxFlights",
+# 	  "maxDate", "impact"))
+# for (country in everyCountry) {
+# 	tempFlights <- flights %>%
+# 		filter(location == country & date < as.Date("2020-07-01")) %>%
+# 		select(num, iso, location, date, flightCount)
+# 	max <- tempFlights[tempFlights$flightCount == max(tempFlights$flightCount),]
+# 	min <- tempFlights[tempFlights$flightCount == min(tempFlights$flightCount),]
+#
+# 	flight_impact <- rbind(flight_impact, data.frame(
+# 		num = tempFlights$num[1],
+# 		iso = tempFlights$iso[1],
+# 		location = country,
+# 		minFlights = min$flightCount[1],
+# 		minDate = min$date[1],
+# 		maxFlights = max$flightCount[1],
+# 		maxDate = max$date[1],
+# 		impact = 100 - (100 * min$flightCount[1] / max$flightCount[1])
+# 	))
+# }
+
+map_data('world') %>%
+	rename(location=region) %>%
+	left_join(flights_impact, by='location', relationship='many-to-many') %>%
+	ggplot(mapping=aes(
+		x=long,
+		y=lat,
+		group=group,
+		fill=impact
+	)) +
+	geom_polygon(color='black') +
+	coord_map(xlim=c(-180, 180), ylim=c(-60, 90)) +
+	scale_fill_distiller(palette='Reds', trans='reverse') +
+	labs(x=element_blank(), y=element_blank()) +
+	guides(fill=guide_legend(title='% drop in air traffic from corona'))
 ```
 
 Ah North Korea, invincible as always. Other than that, no country is visibly below maybe 60%. So it's safe to say that corona has affected most countries air traffic pretty heavily. Now let's see if the vaccines are helping.
 
-```{r globalvaxxvsflights, message=FALSE, warning=FALSE}
-vaxxGlobal <- covid %>%
-	filter(location == "World") %>%
+```{r globalvaxxvsflights, message=F}
+vaxx_global <- covid %>%
+	filter(location == 'World') %>%
 	select(date, people_fully_vaccinated_per_hundred) %>%
 	na.omit()
 
-scale <- scaler(flightsGlobal$flightCount, vaxxGlobal$people_fully_vaccinated_per_hundred)
-inner_join(flightsGlobal, vaxxGlobal, by = "date") %>%
-	ggplot(aes(x = date)) +
-	geom_line(aes(y = flightCount / scale), color = "blue") +
-	geom_line(aes(y = people_fully_vaccinated_per_hundred), color = "darkgreen") +
-	scale_y_continuous(
-		name = "vaccine rate", sec.axis = sec_axis(~.*scale, name = "flights")) +
-	theme(axis.title.y = element_text(color = "darkgreen"),
-	      axis.title.y.right = element_text(color = "blue")) +
-	ggtitle("% vaccinated vs. flights per day")
+graph2axes(
+	input=inner_join(flights_global, vaxx_global, by='date'),
+	x='date',
+	y1='people_fully_vaccinated_per_hundred',
+	y1name='% vaccinated',
+	y1color='darkgreen',
+	y2='flights'
+)
+
 ```
 
-Is it working? I mean, maybe a little at the start. We have a massive spike in vaccines which seems to be completely ignored by the airline industry. Again, it might be better to look at other countries.
+Is it working? Well maybe a little at the start. There is a massive spike in vaccines which seems to be completely ignored by the airline industry. Again, it might be better to look at other countries.
 
-```{r vaxxpercountry, message=FALSE, warning=FALSE}
+```{r vaxxpercountry, message=F}
 for (country in focus) {
-	flightsTemp <- flights %>% filter(location == country) %>%
-		select(date, flightCount)
-	vaxxTemp <- covid %>% filter(location == country) %>%
-		select(date, people_fully_vaccinated_per_hundred) %>% na.omit()
+	flightsTemp <- flights %>%
+		filter(location == country) %>%
+		select(date, flight_count)
 
-	scale <- scaler(flightsTemp$flightCount, vaxxTemp$people_fully_vaccinated_per_hundred)
-	print(inner_join(flightsTemp, vaxxTemp, by = "date") %>%
-		ggplot(aes(x = date)) +
-		geom_line(aes(y = people_fully_vaccinated_per_hundred), color = "darkgreen") +
-		geom_line(aes(y = flightCount / scale), color = "blue") +
-		ylim(0, 100) +
-		scale_y_continuous(
-			name = "vaccine rate",
-			sec.axis = sec_axis(~.*scale, name = "flights")) +
-		theme(axis.title.y = element_text(color = "darkgreen"),
-		      axis.title.y.right = element_text(color = "blue")) +
-		ggtitle(paste0(country, ", vaccines vs. flights")))
-}
-rm(flightsTemp, vaxxTemp)
+	vaxxTemp <- covid %>%
+		filter(location == country) %>%
+		select(date, people_fully_vaccinated_per_hundred) %>%
+		na.omit()
+
+	graph2axes(
+		input=inner_join(flightsTemp, vaxxTemp, by='date'),
+		x='date',
+		y1='people_fully_vaccinated_per_hundred',
+		y1name='% vaccinated',
+		y1color='darkgreen',
+		y2='flight_count',
+		y2name='flights',
+		title=paste('vaccination rate vs. flights in', country)
+	)
+
+}; rm(country, flightsTemp, vaxxTemp)
 ```
 
-It does seem to help, except somehow Australia seems to decrease in flights. In spite of this based on these graphs we can assume that it is reasonably effective for the other countries. We can't look at the graph of every single country in the world, so let's try yielding a single number that shows the correlation between airline recovery & vaccine rate increases. The recovery of the airline industry can be derived in the following
+It does seem to help, except somehow Australia seems to decrease in flights. In spite of this based on these graphs, it is reasonably effective for the other countries. It is time-consuming to look at the graph of every single country in the world, so let's try yielding a single number that shows the correlation between airline recovery & vaccine rate increases. The recovery of the airline industry can be derived in the following
 
 ![](data/airline_recovery_formula.png)
 
-We can also simply use the vaccine growth rate from March to now to also get a number to compare to. Mapping these correlations shows us how effective they are across the world.
+The vaccine growth rate from March can also be simply used to further get a number to compare to. Mapping these correlations shows how effective they are across the world.
 
-```{r vaxflightcorrelation, message=FALSE, warning=FALSE}
-# create empty columns
-flightImpact["febFlights"] <- NA
-flightImpact["currentFlights"] <- NA
-flightImpact["febVaxx"] <- NA
-flightImpact["currentVaxx"] <- NA
-flightImpact["flightVaxxCorrelation"] <- NA
+```{r vaxflightcorrelation, message=F}
+date_range <- c('2021-02-01', '2021-10-31') %>% as.Date()
 
-for (country in everyCountry) {
-	# set febFlights
-	tempFlights <- flights %>%
-		filter(location == country & date == as.Date("2021-02-01")) %>%
-		select(num, location, date, flightCount)
-	flightImpact$febFlights[flightImpact$location == country] <-
-		tempFlights$flightCount[1]
-	# set currentFlights
-	tempFlights <- flights %>%
-		filter(location == country & date == as.Date("2021-10-31")) %>%
-		select(num, location, date, flightCount)
-	flightImpact$currentFlights[flightImpact$location == country] <-
-		tempFlights$flightCount[1]
+flights_temp <- flights %>%
+	select(num, location, date, flight_count) %>%
+	group_by(location) %>%
+	filter(between(date, date_range[1], date_range[2]))
+	#modify_at('flight_count', ~.x/max(.x))
 
-	tempVaxx <- covid %>%
-		select(location, date, people_fully_vaccinated_per_hundred) %>%
-		filter(location == country &
-			(date == as.Date("2021-02-01") | date == as.Date("2021-10-31")))
-	flightImpact$febVaxx[flightImpact$location == country] <-
-		tempVaxx$people_fully_vaccinated_per_hundred[1]
-	flightImpact$currentVaxx[flightImpact$location == country] <-
-		tempVaxx$people_fully_vaccinated_per_hundred[2]
+covid_temp <- covid %>%
+	select(iso_code, location, date, people_fully_vaccinated_per_hundred) %>%
+	group_by(location) %>%
+	filter(between(date, date_range[1], date_range[2])) %>%
+	#modify_at('people_fully_vaccinated_per_hundred', ~.x/max(.x)) %>%
+	replace(is.na(.), 0)
 
-	# make correlation
-	tempFlights <- flights %>%
-		select(num, location, date, flightCount) %>%
-		filter(location == country &
-			(date >= as.Date("2021-02-01") & date <= as.Date("2021-10-31")))
-	tempFlights$flightCount <-
-		tempFlights$flightCount / max(tempFlights$flightCount)
-	tempVaxx <- covid %>%
-		select(location, date, people_fully_vaccinated_per_hundred) %>%
-		filter(location == country &
-			(date >= as.Date("2021-02-01") & date <= as.Date("2021-10-31")))
-	tempVaxx$people_fully_vaccinated_per_hundred[
-		is.na(tempVaxx$people_fully_vaccinated_per_hundred)] <- 0
-	# avoid dividing by zero
-	if (max(tempVaxx$people_fully_vaccinated_per_hundred) != 0) {
-		tempVaxx$people_fully_vaccinated_per_hundred <-
-			tempVaxx$people_fully_vaccinated_per_hundred /
-			max(tempVaxx$people_fully_vaccinated_per_hundred)
+cor_safe <- \(x, y, ...) {
+	if (sd(x, na.rm=T) == 0 || sd(y, na.rm=T) == 0) {
+		return(0)
+	} else {
+		cor(x, y, ...)
 	}
-
-	if (length(tempFlights$date) != length(tempVaxx$date)) {
-		#print(sprintf("insufficient data for %s", country))
-		next
-	}
-
-	flightImpact$flightVaxxCorrelation[flightImpact$location == country] <-
-		cor(tempFlights$flightCount, tempVaxx$people_fully_vaccinated_per_hundred)
 }
-rm(tempFlights, tempVaxx)
 
-map_data("world") %>%
-	rename(location = region) %>%
-	left_join(flightImpact, by = "location") %>%
-	ggplot(mapping = aes(x = long, y = lat, group = group,
-	                     fill = flightVaxxCorrelation)) +
-	geom_polygon(color = "black") +
+correlations <- inner_join(covid_temp, flights_temp, by=c('date', 'location')) %>%
+	group_by(location) %>%
+	mutate(flight_vax_corr = cor_safe(flight_count, people_fully_vaccinated_per_hundred)) %>%
+	select(iso_code, location, flight_vax_corr) %>%
+	unique()
+
+
+
+map_data('world') %>%
+	rename(location=region) %>%
+	left_join(correlations, by='location', relationship='many-to-many') %>%
+	ggplot(mapping=aes(
+		x=long, y=lat, group=group,
+		fill=flight_vax_corr
+	)) +
+	geom_polygon(color='black') +
 	coord_map(xlim = c(-180, 180), ylim=c(-60, 90)) +
-	scale_fill_distiller(palette = "Spectral", direction = 1, limits=c(-1, 1),
-	                     breaks=seq(-1,1,by=0.25)) +
-	labs(x = element_blank(), y = element_blank()) +
-	guides(fill = guide_legend(title = "correlation")) +
-	ggtitle("Flight recovery rates vs. Vaccination rates from Feb. 2021 to now")
+	scale_fill_distiller(
+		palette = 'Spectral',
+		direction = 1,
+		limits=c(-1, 1),
+		breaks=seq(-1, 1, by=.25)
+	) +
+	labs(x=element_blank(), y=element_blank()) +
+	guides(fill=guide_legend(title='correlation')) +
+	ggtitle('Flight recovery rates vs. Vaccination rates, Feb. - Oct. 2021')
 ```
 
-As one can see, vaccines seem to be much more effective in North America & Europe. This seems probable as these countries have a much better chance at higher vaccination rates & therefore higher airline recovery rates. Japan & South Korea have much more modest numbers compared to the rest of the 1st world. This is likely because they're industry recovery happened sooner than the vaccination. Australia & New Zealand have negative correlation, which is due to their recent international travel caps set by the governments. We can reasonable conclude that in developed countries with good vaccination rates excluding the aforementioned exceptions, the vaccine seems to improve the recovery of these industries. Below is the same graph, but with the ability to view the numbers of specific countries.
+Vaccines seem to be much more effective in North America & Europe. This seems probable as these countries have a much better chance at higher vaccination rates & therefore higher airline recovery rates. Japan & South Korea have modest numbers compared to the rest of the 1st world. This is likely because they're industry recovery happened sooner than the vaccination. Australia & New Zealand have negative correlation, which is due to their recent international travel caps set by the governments. It canbe reasonably concluded that in developed countries with good vaccination rates excluding the aforementioned exceptions, the vaccine seems to improve the recovery of these industries. Below is the same graph, but with the ability to view the numbers of specific countries.
 
-```{r interactive, warning=FALSE, error=FALSE}
+```{r interactive}
 pacman::p_load(plotly)
-flightImpact %>%
-	plot_ly(type = "choropleth",
-	        locations = flightImpact$iso,
-	        z = flightImpact$flightVaxxCorrelation,
-	        text = flightImpact$location,
-	        colorscale = "agsunset",
-	        reversescale=TRUE)
+correlations %>%
+	plot_ly(
+		type='choropleth',
+		locations=.$iso_code,
+		z=.$flight_vax_corr,
+		text=.$location,
+		colorscale='agsunset',
+		reversescale=T
+	)
 ```
