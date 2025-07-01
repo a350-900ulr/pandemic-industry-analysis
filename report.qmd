@@ -417,7 +417,7 @@ for (country in focus) {
 
 It is still a bit difficult to read, however, we can see that the initial outbreak caused a massive dip in every country, with each successive peak hindering recovery. Is there a way to compare how much a country's airline industry was affected compared to another? Taking the pre-corona levels & the lowest point in that country's air traffic, then comparing it to the amount of total cases a country had by the end of the previously mentioned initial air traffic drop: July 2020. The formula would be
 
-![](data/airline_impact_formula_dark.png)
+![](images/formulas/airline_impact_formula_dark.png)
 
 Although the number by itself doesn't really mean anything, it can be used to compare every country on a map. Before that however, let's make sure that these minimums & maximums are not too spread out time-wise, otherwise this statistic could be weakly founded.
 
@@ -511,7 +511,7 @@ for (country in focus) {
 
 It does seem to help, except somehow Australia seems to decrease in flights. In spite of this based on these graphs, it is reasonably effective for the other countries. It is time-consuming to look at the graph of every single country in the world, so let's try yielding a single number that shows the correlation between airline recovery & vaccine rate increases. The recovery of the airline industry can be derived in the following
 
-![](data/airline_recovery_formula_dark.png)
+![](images/formulas/airline_recovery_formula_dark.png)
 
 The vaccine growth rate from March can also be simply used to further get a number to compare to. Mapping these correlations shows how effective they are across the world.
 
