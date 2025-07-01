@@ -64,4 +64,4 @@ An exciting part of this project is that some datasets only use the name of the 
 
 ## Usage <a name="usage"></a>
 
-To read the results itself, the analysis is in a presentable format as `report.html`. This was created using `report.rmd` using R 4.4.3
+To read the results itself, the analysis is in a presentable format as `report.html`. This was created using `report.qmd` using R 4.4.3

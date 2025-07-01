@@ -1,6 +1,8 @@
 # Target: Get data from 3rd graph in https://www.flightera.net/en/flight_stats
+pacman::p_load(tidyverse, rvest, robotstxt, xml2, magrittr)
+
 flights <- setNames(
-	data.frame(matrix(ncol = 6, nrow = 0)),
+	tibble(matrix(ncol = 6, nrow = 0)),
 	c("code", "iso", "num", "location", "date", "flightCount")
 )
 
@@ -15,7 +17,6 @@ flights <- setNames(
 # when flightera doesn't contain data for a country.
 
 # get country codes from https://www.iban.com/country-codes
-pacman::p_load(tidyverse, rvest, robotstxt, xml2, magrittr)
 paths_allowed("https://www.iban.com/country-codes")
 page <- read_html("https://www.iban.com/country-codes")
 page %>% xml2::xml_structure()
@@ -38,7 +39,7 @@ for (i in 1:length(countryCodes)) {
 		expr = {
 			data <- readLines(paste0(
 				"https://www.flightera.net/en/flight_stats?q=",
-				countryCodes[i], sep=""
+				countryCodes[i]
 			))
 			# remove everything before 2020 & split into respective years to
 			# extract numbers
