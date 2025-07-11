@@ -110,16 +110,12 @@ This means we can use the latest total for each country as a rough number of how
 
 totals <- covid %>%
 	select('location', 'date', 'total_cases_per_million') %>%
-	filter(date == '2021-10-31') # confirm that this works
-	# filter(date %>% {
-	# 	month(.) == 10 & day(.) == 31 & year(.) == 2021
-	# })
-
+	filter(date == '2021-10-31')
 
 # Function to create world map plots
 world_map <- \(
 	input_df, fill_var, plot_title, legend_title=element_blank(),
-	fill_args = list(palette='Reds', trans='reverse')
+	fill_args=list(palette='Reds', trans='reverse')
 ) {
 	pacman::p_load(rlang)
 
